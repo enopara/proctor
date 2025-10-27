@@ -17,6 +17,30 @@ class Question < ApplicationRecord
   # Ensure options are present for question types that need them
   validate :validate_options_for_question_type
   
+  validates :content, presence: true
+  validates :question_type, presence: true
+
+  validate :validate_options_for_question_type
+  
+  # -------------------------------------------------
+  # Role-based visibility:
+  # - visible_for_roles is a jsonb array column
+  # - [] means global (everyone can see this question)
+  # - ["nurse"] means only "nurse" role should see it
+  # -------------------------------------------------
+  scope :visible_for, ->(role) {
+    if role.blank?
+      # If we don't know the role, only return global questions
+      where("visible_for_roles = '[]'::jsonb")
+    else
+      # Return global questions OR questions whose visible_for_roles contains this role
+      where(
+        "visible_for_roles = '[]'::jsonb OR visible_for_roles @> to_jsonb(ARRAY[?]::text[])",
+        role.to_s.downcase
+      )
+    end
+  }
+  
   private
   
   def validate_options_for_question_type
