@@ -240,4 +240,39 @@ customer_questions.each do |question_attrs|
   customer_survey.questions.create!(question_attrs)
 end
 
+puts "Creating role-based visibility demo survey"
+
+survey = Survey.create!(
+  title: "Role-Based Survey Demo",
+  description: "Demonstrates the role-based question visibility and responses."
+)
+
+Question.create!(
+  survey: survey,
+  content: "What do you enjoy most about your work?",
+  question_type: "text",
+  visible_for_roles: []
+)
+
+Question.create!(
+  survey: survey,
+  content: "How many patients do you typically assist per day?",
+  question_type: "number",
+  visible_for_roles: ["nurse"]
+)
+
+Question.create!(
+  survey: survey,
+  content: "How many projects are you managing this quarter?",
+  question_type: "number",
+  visible_for_roles: ["manager"]
+)
+
+Response.create!(
+  survey: survey,
+  question: Question.first,
+  value: "Helping people recover faster.",
+  role: "nurse"
+)
+
 puts "Seed data created successfully!"
