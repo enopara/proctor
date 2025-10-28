@@ -1,7 +1,14 @@
 class ResponsesController < ApplicationController
   def create
     @survey = Survey.find(params[:survey_id])
-    @response = Response.new(response_params)
+
+    # Normalize role from incoming params (top-level, not nested)
+    role = params[:role].to_s.strip.downcase.presence
+
+    # Build the response tied explicitly to this survey
+    @response = @survey.responses.new(
+      response_params.merge(role: role)
+    )
 
     respond_to do |format|
       if @response.save
@@ -13,10 +20,13 @@ class ResponsesController < ApplicationController
       end
     end
   end
-  
+
   private
-  
+
   def response_params
-    params.require(:response).permit(:survey_id, :question_id, :value)
+    # don't let the client send `role` directly
+    # We merge it ourselves above after normalizing
+    # We ALSO don't let them sneak in some other survey_id. We trust @survey.
+    params.require(:response).permit(:question_id, :value)
   end
 end

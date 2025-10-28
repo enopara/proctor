@@ -4,8 +4,8 @@ import { createRoot } from 'react-dom/client';
 const TextQuestion = ({ question, onChange }) => {
   return (
     <div className="mt-1">
-      <textarea 
-        rows={3} 
+      <textarea
+        rows={3}
         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
         onChange={(e) => onChange(question.id, e.target.value)}
       />
@@ -15,7 +15,7 @@ const TextQuestion = ({ question, onChange }) => {
 
 const MultipleChoiceQuestion = ({ question, onChange }) => {
   const options = ['Option 1', 'Option 2', 'Option 3'];
-  
+
   return (
     <div className="mt-2 space-y-2">
       {options.map((option, index) => (
@@ -39,20 +39,20 @@ const MultipleChoiceQuestion = ({ question, onChange }) => {
 const CheckboxQuestion = ({ question, onChange }) => {
   const options = ['Option 1', 'Option 2', 'Option 3'];
   const [selectedOptions, setSelectedOptions] = useState([]);
-  
+
   const handleCheckboxChange = (option, isChecked) => {
     let newSelectedOptions;
-    
+
     if (isChecked) {
       newSelectedOptions = [...selectedOptions, option];
     } else {
       newSelectedOptions = selectedOptions.filter(item => item !== option);
     }
-    
+
     setSelectedOptions(newSelectedOptions);
     onChange(question.id, newSelectedOptions.join(', '));
   };
-  
+
   return (
     <div className="mt-2 space-y-2">
       {options.map((option, index) => (
@@ -97,10 +97,24 @@ const RatingQuestion = ({ question, onChange }) => {
 
 const TakeSurvey = (props) => {
   const { survey, questions } = props;
+  const [role, setRole] = useState(""); // NEW: user's role (e.g. "nurse", "manager")
   const [responses, setResponses] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState([]);
   const [submitted, setSubmitted] = useState(false);
+
+  // Filter questions based on role.
+  // Rule: [] (empty) = global questions visible to everyone
+  const filteredQuestions = questions.filter(q => {
+    if (!q.visible_for_roles || q.visible_for_roles.length === 0) {
+      return true; // global
+    }
+    if (!role) {
+      return false; // if no role chosen yet, don't show restricted questions
+    }
+    return q.visible_for_roles.map(r => r.toLowerCase()).includes(role.toLowerCase());
+  });
+
 
   const handleInputChange = (questionId, value) => {
     setResponses({
@@ -114,24 +128,34 @@ const TakeSurvey = (props) => {
     setSubmitting(true);
     setErrors([]);
 
-    // Validate responses
-    const requiredQuestions = questions.filter(q => q.required);
+    // Must choose a role
+    if (!role) {
+      setErrors(['Please select your role before submitting.']);
+      setSubmitting(false);
+      return;
+    }
+
+    // Validate only the questions shown to this role
+    const requiredQuestions = filteredQuestions.filter(q => q.required);
     const missingResponses = requiredQuestions.filter(q => !responses[q.id]);
-    
+
     if (missingResponses.length > 0) {
       setErrors(['Please answer all required questions.']);
       setSubmitting(false);
       return;
     }
 
-    // Format response data
-    const formattedResponses = Object.keys(responses).map(questionId => ({
+    // Build the answers list as question_id + value
+    // (join arrays for checkbox answers)
+    const questionResponsesAttributes = Object.keys(responses).map(questionId => ({
       question_id: questionId,
-      content: responses[questionId]
+      value: Array.isArray(responses[questionId])
+        ? responses[questionId].join(', ')
+        : responses[questionId]
     }));
 
     const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
-    
+
     try {
       const response = await fetch(`/surveys/${survey.id}/responses`, {
         method: 'POST',
@@ -140,9 +164,10 @@ const TakeSurvey = (props) => {
           'X-CSRF-Token': csrfToken
         },
         body: JSON.stringify({
+          role: role, // <-- send role at top level
           response: {
             survey_id: survey.id,
-            question_responses_attributes: formattedResponses
+            question_responses_attributes: questionResponsesAttributes
           }
         })
       });
@@ -162,119 +187,126 @@ const TakeSurvey = (props) => {
     }
   };
 
-  const renderQuestion = (question) => {
-    switch (question.question_type) {
-      case 'text':
-        return (
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={`question_${question.id}`}>
-              {question.content} {question.required && <span className="text-red-500">*</span>}
-            </label>
-            <input
-              id={`question_${question.id}`}
-              type="text"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              value={responses[question.id] || ''}
-              onChange={(e) => handleInputChange(question.id, e.target.value)}
-              required={question.required}
-            />
-          </div>
-        );
-      
-      case 'long_text':
-        return (
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={`question_${question.id}`}>
-              {question.content} {question.required && <span className="text-red-500">*</span>}
-            </label>
-            <textarea
-              id={`question_${question.id}`}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              rows="4"
-              value={responses[question.id] || ''}
-              onChange={(e) => handleInputChange(question.id, e.target.value)}
-              required={question.required}
-            />
-          </div>
-        );
-      
-      case 'multiple_choice':
-        const options = question.options || [];
-        return (
-          <div className="mb-4">
-            <fieldset>
-              <legend className="block text-gray-700 text-sm font-bold mb-2">
-                {question.content} {question.required && <span className="text-red-500">*</span>}
-              </legend>
-              <div className="mt-2 space-y-2">
-                {options.map((option, index) => (
-                  <div key={index} className="flex items-center">
-                    <input
-                      id={`question_${question.id}_option_${index}`}
-                      name={`question_${question.id}`}
-                      type="radio"
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                      value={option}
-                      checked={responses[question.id] === option}
-                      onChange={() => handleInputChange(question.id, option)}
-                      required={question.required}
-                    />
-                    <label htmlFor={`question_${question.id}_option_${index}`} className="ml-3 block text-sm text-gray-700">
-                      {option}
-                    </label>
-                  </div>
-                ))}
+ const renderQuestion = (question) => {
+  switch (question.question_type) {
+    case 'text':
+      return (
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={`question_${question.id}`}>
+            {question.content} {question.required && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            id={`question_${question.id}`}
+            type="text"
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            value={responses[question.id] || ''}
+            onChange={(e) => handleInputChange(question.id, e.target.value)}
+            required={question.required}
+          />
+        </div>
+      );
+     case 'long_text':
+      return (
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={`question_${question.id}`}>
+            {question.content} {question.required && <span className="text-red-500">*</span>}
+          </label>
+          <textarea
+            id={`question_${question.id}`}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            rows="4"
+            value={responses[question.id] || ''}
+            onChange={(e) => handleInputChange(question.id, e.target.value)}
+            required={question.required}
+          />
+        </div>
+      );
+
+    case 'multiple_choice': {
+  const options = question.options || [];
+  return (
+    <div className="mb-4">
+      <fieldset>
+        <legend className="block text-gray-700 text-sm font-bold mb-2">
+          {question.content} {question.required && <span className="text-red-500">*</span>}
+        </legend>
+        <div className="mt-2 space-y-2">
+          {options.map((option, index) => (
+            <div key={index} className="flex items-center">
+              <input
+                id={`question_${question.id}_option_${index}`}
+                name={`question_${question.id}`}
+                type="radio"
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                value={option}
+                checked={responses[question.id] === option}
+                onChange={() => handleInputChange(question.id, option)}
+                required={question.required}
+              />
+              <label
+                htmlFor={`question_${question.id}_option_${index}`}
+                className="ml-3 block text-sm text-gray-700"
+              >
+                {option}
+              </label>
+            </div>
+          ))}
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+     case 'checkbox': {
+  const checkboxOptions = question.options || [];
+  return (
+    <div className="mb-4">
+      <fieldset>
+        <legend className="block text-gray-700 text-sm font-bold mb-2">
+          {question.content} {question.required && <span className="text-red-500">*</span>}
+        </legend>
+        <div className="mt-2 space-y-2">
+          {checkboxOptions.map((option, index) => {
+            // Initialize as array if not already
+            const currentResponses = Array.isArray(responses[question.id])
+              ? responses[question.id]
+              : responses[question.id] ? [responses[question.id]] : [];
+
+            const isChecked = currentResponses.includes(option);
+
+            return (
+              <div key={index} className="flex items-center">
+                <input
+                  id={`question_${question.id}_option_${index}`}
+                  type="checkbox"
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  value={option}
+                  checked={isChecked}
+                  onChange={(e) => {
+                    let newValues;
+                    if (e.target.checked) {
+                      newValues = [...currentResponses, option];
+                    } else {
+                      newValues = currentResponses.filter(val => val !== option);
+                    }
+                    handleInputChange(question.id, newValues);
+                  }}
+                />
+                <label
+                  htmlFor={`question_${question.id}_option_${index}`}
+                  className="ml-3 block text-sm text-gray-700"
+                >
+                  {option}
+                </label>
               </div>
-            </fieldset>
-          </div>
-        );
-      
-      case 'checkbox':
-        const checkboxOptions = question.options || [];
-        return (
-          <div className="mb-4">
-            <fieldset>
-              <legend className="block text-gray-700 text-sm font-bold mb-2">
-                {question.content} {question.required && <span className="text-red-500">*</span>}
-              </legend>
-              <div className="mt-2 space-y-2">
-                {checkboxOptions.map((option, index) => {
-                  // Initialize as array if not already
-                  const currentResponses = Array.isArray(responses[question.id]) 
-                    ? responses[question.id] 
-                    : responses[question.id] ? [responses[question.id]] : [];
-                  
-                  const isChecked = currentResponses.includes(option);
-                  
-                  return (
-                    <div key={index} className="flex items-center">
-                      <input
-                        id={`question_${question.id}_option_${index}`}
-                        type="checkbox"
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        value={option}
-                        checked={isChecked}
-                        onChange={(e) => {
-                          let newValues;
-                          if (e.target.checked) {
-                            newValues = [...currentResponses, option];
-                          } else {
-                            newValues = currentResponses.filter(val => val !== option);
-                          }
-                          handleInputChange(question.id, newValues);
-                        }}
-                      />
-                      <label htmlFor={`question_${question.id}_option_${index}`} className="ml-3 block text-sm text-gray-700">
-                        {option}
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-            </fieldset>
-          </div>
-        );
-      
+            );
+          })}
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
+
       case 'rating':
         return (
           <div className="mb-4">
@@ -310,7 +342,7 @@ const TakeSurvey = (props) => {
             </fieldset>
           </div>
         );
-      
+
       default:
         return (
           <div className="mb-4">
@@ -343,7 +375,7 @@ const TakeSurvey = (props) => {
     <div>
       <h1 className="text-2xl font-bold mb-4">{survey.title}</h1>
       <p className="mb-6">{survey.description}</p>
-      
+
       {errors.length > 0 && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
           <div className="flex">
@@ -362,14 +394,39 @@ const TakeSurvey = (props) => {
           </div>
         </div>
       )}
-      
+      <div className="mb-6 p-4 bg-white shadow rounded">
+        <label className="block text-gray-700 text-sm font-bold mb-2">
+          Your role <span className="text-red-500">*</span>
+        </label>
+        <select
+          className="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none focus:shadow-outline"
+          value={role}
+          onChange={(e) => {
+            setRole(e.target.value);
+            setResponses({});
+          }}
+          required
+        >
+          <option value="">-- select your role --</option>
+          <option value="nurse">Nurse</option>
+          <option value="manager">Manager</option>
+          <option value="doctor">Doctor</option>
+          <option value="engineer">Engineer</option>
+        </select>
+        {!role && (
+          <p className="text-xs text-gray-500 mt-2">
+            Select your role to see the questions meant for you.
+          </p>
+        )}
+      </div>
+
       <form onSubmit={handleSubmit}>
-        {questions.map(question => (
+        {filteredQuestions.map(question => (
           <div key={question.id} className="mb-6 p-4 bg-white shadow rounded">
             {renderQuestion(question)}
           </div>
         ))}
-        
+
         <div className="mt-6">
           <button
             type="submit"
@@ -390,14 +447,14 @@ const initializeTakeSurvey = () => {
   if (container && !container.hasAttribute('data-react-initialized')) {
     const surveyData = JSON.parse(container.dataset.survey || '{}');
     const questionsData = JSON.parse(container.dataset.questions || '[]');
-    
+
     // Mark as initialized to prevent double initialization
     container.setAttribute('data-react-initialized', 'true');
-    
+
     const root = createRoot(container);
     root.render(
-      <TakeSurvey 
-        survey={surveyData} 
+      <TakeSurvey
+        survey={surveyData}
         questions={questionsData}
       />
     );
