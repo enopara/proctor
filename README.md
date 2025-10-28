@@ -126,6 +126,4 @@ These components are located in the `app/javascript/components` directory.
 
 ## Submission
 
-Please fork this github repo, and include your solution as a PR to the forked repo with clear instructions on how to run your code. Include any notes or explanations in the README or as comments in your code.
-
-Good luck!
+This update adds role-based visibility to surveys, allowing different user roles (e.g., nurse, manager, doctor, engineer) to view only the questions meant for them while maintaining global questions visible to all. The backend introduces visible_for_roles (JSONB) on questions and role on responses, with updated controllers to handle role-based filtering and submission. On the frontend, users now select their role from a dropdown before taking a survey; the questions dynamically adjust based on that selection, and the chosen role is included when responses are submitted. To test the implementation, start the development server and visit http://127.0.0.1:3000/surveys/8/take
